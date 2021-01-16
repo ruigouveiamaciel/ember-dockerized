@@ -31,4 +31,4 @@ services:
     image: redis:alpine
     restart: always
     volumes:
-        - "./volumes/redis:/data"
+        - "./volumes/cache:/data"
