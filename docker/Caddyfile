@@ -1,9 +1,16 @@
 {$CADDY_DOMAIN}:{$CADDY_PORT} {
-    root * /var/www/html/public
-	php_fastcgi * 127.0.0.1:9000 {
-        index index.php
-		env SERVER_PORT {$CADDY_PORT}
-    }
-	rewrite / /index.php?{query}
-	file_server
+	handle_path /assets/* {
+		root * /var/www/assets
+		file_server
+	}
+
+	handle {
+		root * /var/www/html/public
+		php_fastcgi * 127.0.0.1:9000 {
+			index index.php
+			env SERVER_PORT {$CADDY_PORT}
+		}
+		rewrite / /index.php?{query}
+		file_server
+	}
 }
