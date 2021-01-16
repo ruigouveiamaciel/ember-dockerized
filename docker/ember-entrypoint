@@ -1,0 +1,185 @@
+#!/bin/sh
+
+echoerr() { echo "$@" 1>&2; }
+
+# Function to make communications with GmodStore API easier.
+gmodstore() {
+    if [ -z "$GMODSTORE_API" ]; then
+        echoerr "No GmodStore API key found, please provide one."
+        return 1
+    fi
+
+    HTTP_URL=https://api.gmodstore.com/v2/$1
+    HTTP_STATUS=`curl --silent -w "%{http_code}" -o "request.json" -H "Authorization: Bearer $GMODSTORE_API" $HTTP_URL`
+    HTTP_BODY=`cat request.json`
+
+    if [ $HTTP_STATUS -ge 200 ] && [ $HTTP_STATUS -lt 300 ]; then
+        jq -r "$2" request.json
+        rm request.json
+        return 0
+    elif [ $HTTP_STATUS -eq 401 ]; then
+        echoerr "Failed to authenticate for GmodStore API. Please check if your key is valid."
+    elif [ $HTTP_STATUS -eq 403 ]; then
+        echoerr "Gmodstore API Key is missing one or more of the followings permissions:"
+        echoerr "  - Read addons"
+        echoerr "  - Read addons purchases"
+        echoerr "  - Read users"
+        echoerr "  - Download addon versions"
+    elif [ $HTTP_STATUS -eq 429 ]; then
+        wait 60
+        gmodstore $@
+    else
+        echoerr "Failed to communicate with GmodStore API."
+    fi
+
+    echoerr "----------------------------------------"
+    echoerr "     URL: $HTTP_URL"
+    echoerr "  STATUS: $HTTP_STATUS"
+    echoerr "RESPONSE: $HTTP_BODY"
+    return 1
+}
+
+# php-fpm needs to have the right permissions or it will always return 404.
+fixpermissions() {
+    echo "Fixing permissions for '$1'"
+    chown -R www-data:www-data $1
+    chmod -R 776 $1
+}
+
+buildconfig() {
+    echo "Building config.php..."
+    cat << EOF > config.php
+<?php
+\$settings = [
+    'steam_api_key' => '$STEAM_API',
+    'discord_api' => [
+        'client_id' => '',
+        'client_secret' => '',
+        'bot_token' => '',
+        'guild_id' => ''
+    ],
+    'db' => [
+        'host' => '$MYSQL_HOST',
+        'port' => $MYSQL_PORT,
+        'database' => '$MYSQL_DATABASE',
+        'username' => '$MYSQL_USER',
+        'password' => '$MYSQL_PASSWORD'
+    ],
+    'cache' => [
+        'cache.default' => '$CACHE_DRIVER',
+        'database.redis' => [
+            'cluster' => $REDIS_CLUSTER,
+            'default' => [
+                'host' => '$REDIS_HOST',
+                'password' => '$REDIS_PASSWORD',
+                'port' => $REDIS_PORT,
+                'database' => $REDIS_DATABASE
+            ]
+        ],
+        'cache.stores.memcached' => [
+            'servers' => [
+                [
+                    'host'   => '$MEMCACHED_HOST',
+                    'port'   => $MEMCACHED_PORT,
+                    'weight' => $MEMCACHED_WEIGHT
+                ]
+            ]
+        ]
+    ],
+    'session_lifetime' => $SESSION_LIFE,
+    'development_mode' => $DEVELOPMENT_MODE
+];
+EOF
+}
+
+set -e
+
+echo "Fetching Steam ID..."
+STEAMID64=`gmodstore users/me .data.id`
+
+echo "Fetching Purchases..."
+PURCHASES=`gmodstore users/$STEAMID64/purchases\?with=addon '[.data[]|select(.revoked == false)|.addon.id]'`
+
+OWNS_EMBER=`echo "$PURCHASES" | jq -r 'contains([5620])'`
+OWNS_FORUMS=`echo "$PURCHASES" | jq -r 'contains([5876])'`
+OWNS_DISCORD=`echo "$PURCHASES" | jq -r 'contains([6122])'`
+
+if [ "$OWNS_EMBER" != "true" ]; then
+    echo "You don't own Ember. Please make sure to use an API key from an account that owns Ember."
+    exit 1
+fi
+
+fixpermissions .
+find . -name . -o -prune -exec rm -rf -- {} +
+
+# Check for ember updates, download new version if any exists.
+echo "Checking for ember updates..."
+EMBER_REMOTE=`gmodstore addons/5620?with=latest_version '.data.latest_version.id'`
+set +e
+EMBER_LOCAL=`cat ember.version`
+set -e
+
+if [ "$EMBER_REMOTE" = "$EMBER_LOCAL" ]; then
+    echo "No updated available for ember, skipping update."
+else
+    echo "New update avaiable for ember, updating..."
+    EMBER_DOWNLOAD=`gmodstore addons/5620/versions/$EMBER_REMOTE/download | jq -r '.data.url'`
+
+    echo "Cleaning up previous versions..."
+    fixpermissions .
+    find . -name . -o -prune -exec rm -rf -- {} +
+
+    echo "Downloading and extracting new version..."
+    mkdir -p ./.downloads
+    curl --silent -o ./.downloads/ember.zip $EMBER_DOWNLOAD
+    unzip -o -q ./.downloads/ember.zip "web/*" -d "./.downloads/"
+    for x in ./.downloads/web/* ./.downloads/web/.[!.]* ./.downloads/web/..?*; do
+        if [ -e "$x" ]; then mv -- "$x" ./; fi
+    done
+
+    echo "Cleaning up update..."
+    rm -R ./.downloads
+    echo "$EMBER_REMOTE" > ember.version
+    buildconfig
+    fixpermissions .
+
+    echo "Ember updated!"
+fi
+
+if [ "$OWNS_FORUMS" != "true" ]; then
+    echo "You don't own the Forums DLC, skipping download..."
+else
+    echo "Checking for Forums DLC updates..."
+    FORUMS_REMOTE=`gmodstore addons/5876?with=latest_version '.data.latest_version.id'`
+    set +e
+    FORUMS_LOCAL=`cat ./modules/forums/forums.version`
+    set -e
+
+    if [ "$FORUMS_REMOTE" = "$FORUMS_LOCAL" ]; then
+        echo "No updated available for Forums DLC, skipping update."
+    else
+        echo "New update avaiable for Forums DLC, updating..."
+        FORUMS_DOWNLOAD=`gmodstore addons/5876/versions/$FORUMS_REMOTE/download | jq -r '.data.url'`
+
+        echo "Cleaning up previous versions..."
+        rm -Rf ./modules/forums/
+
+        echo "Downloading and extracting new version..."
+        mkdir -p ./.downloads
+        curl --silent -o ./.downloads/forums.zip $FORUMS_DOWNLOAD
+        unzip -q -o ./.downloads/forums.zip "app/*" "modules/*" -d "."
+
+        echo "Cleaning up update..."
+        rm -R ./.downloads
+        echo "$FORUMS_REMOTE" > ./modules/forums/forums.version
+        fixpermissions .
+
+        echo "Forums DLC updated!"
+    fi
+fi
+
+fixpermissions . # Make sure we have the right permissions for php-fpm
+
+echo "Updates finished. Starting caddy and php-fpm..."
+caddy start --config /etc/caddy/Caddyfile
+docker-php-entrypoint php-fpm

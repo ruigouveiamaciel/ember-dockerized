@@ -1,0 +1,28 @@
+version: "3.3"
+
+services:
+  ember:
+    container_name: ember
+    image: ember
+    build: ./docker
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - cache
+      - database
+    volumes:
+      - "./volumes/html/:/var/www/html/"
+    env_file: .env
+
+  database:
+    container_name: ember-database
+    image: mysql:5
+    env_file: .env
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+
+  cache:
+    container_name: ember-cache
+    image: redis:alpine
+    restart: always

@@ -1,0 +1,9 @@
+localhost:80 {
+    root * /var/www/html/public
+	php_fastcgi * 127.0.0.1:9000 {
+        index index.php
+		env SERVER_PORT 80
+    }
+	rewrite / /index.php?{query}
+	file_server
+}
