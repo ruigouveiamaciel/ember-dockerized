@@ -1,8 +1,8 @@
-localhost:80 {
+{$CADDY_DOMAIN}:{$CADDY_PORT} {
     root * /var/www/html/public
 	php_fastcgi * 127.0.0.1:9000 {
         index index.php
-		env SERVER_PORT 80
+		env SERVER_PORT {$CADDY_PORT}
     }
 	rewrite / /index.php?{query}
 	file_server
