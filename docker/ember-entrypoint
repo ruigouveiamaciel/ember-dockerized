@@ -159,7 +159,7 @@ else
         FORUMS_DOWNLOAD=`gmodstore addons/5876/versions/$FORUMS_REMOTE/download | jq -r '.data.url'`
 
         echo "Cleaning up previous versions..."
-        fixpermissions ./modules/forums/
+        fixpermissions ./modules/
         rm -Rf ./modules/forums/
 
         echo "Downloading and extracting new version..."
