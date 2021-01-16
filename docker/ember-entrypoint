@@ -179,6 +179,13 @@ fi
 buildconfig # Update config just in case any environment variable changed.
 fixpermissions . # Make sure we have the right permissions for php-fpm
 
+# This avoids the ember.lock file being removed before mysql is online.
+until nc -z -v -w30 $MYSQL_HOST 3306
+do
+  echo "Waiting for database connection..."
+  sleep 1
+done
+
 echo "Updates finished. Starting caddy and php-fpm..."
 caddy start --config /etc/caddy/Caddyfile
 docker-php-entrypoint php-fpm

@@ -12,7 +12,7 @@ RUN echo "allow_url_fopen = on" >> $PHP_INI_DIR/php.ini
 RUN apt-get update && apt-get install -y gnupg debian-keyring debian-archive-keyring apt-transport-https && \
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/cfg/gpg/gpg.155B6D79CA56EA34.key' | apt-key add - && \
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/cfg/setup/config.deb.txt?distro=debian&version=any-version' | tee -a /etc/apt/sources.list.d/caddy-stable.list && \
-    apt-get update && apt-get upgrade -y jq unzip gnupg caddy
+    apt-get update && apt-get upgrade -y jq unzip gnupg caddy netcat
 
 # Entrypoint and Caddyfile
 COPY Caddyfile /etc/caddy/Caddyfile
