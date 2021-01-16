@@ -109,9 +109,6 @@ if [ "$OWNS_EMBER" != "true" ]; then
     exit 1
 fi
 
-fixpermissions .
-find . -name . -o -prune -exec rm -rf -- {} +
-
 # Check for ember updates, download new version if any exists.
 echo "Checking for ember updates..."
 EMBER_REMOTE=`gmodstore addons/5620?with=latest_version '.data.latest_version.id'`
@@ -162,6 +159,7 @@ else
         FORUMS_DOWNLOAD=`gmodstore addons/5876/versions/$FORUMS_REMOTE/download | jq -r '.data.url'`
 
         echo "Cleaning up previous versions..."
+        fixpermissions ./modules/forums/
         rm -Rf ./modules/forums/
 
         echo "Downloading and extracting new version..."
@@ -178,6 +176,7 @@ else
     fi
 fi
 
+buildconfig # Update config just in case any environment variable changed.
 fixpermissions . # Make sure we have the right permissions for php-fpm
 
 echo "Updates finished. Starting caddy and php-fpm..."
