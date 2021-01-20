@@ -1,0 +1,116 @@
+#!/bin/sh
+
+echoerr() { echo "$@" 1>&2; }
+
+# Function to make communications with GmodStore API easier.
+gmodstore() {
+    if [ -z "$GMODSTORE_API" ]; then
+        echoerr "No GmodStore API key found, please provide one."
+        return 1
+    fi
+
+    HTTP_URL=https://api.gmodstore.com/v2/$1
+    HTTP_STATUS=`curl --silent -w "%{http_code}" -o "request.json" -H "Authorization: Bearer $GMODSTORE_API" $HTTP_URL`
+    HTTP_BODY=`cat request.json`
+
+    if [ $HTTP_STATUS -ge 200 ] && [ $HTTP_STATUS -lt 300 ]; then
+        jq -r "$2" request.json
+        rm request.json
+        return 0
+    elif [ $HTTP_STATUS -eq 401 ]; then
+        echoerr "Failed to authenticate for GmodStore API. Please check if your key is valid."
+    elif [ $HTTP_STATUS -eq 403 ]; then
+        echoerr "Gmodstore API Key is missing one or more of the followings permissions:"
+        echoerr "  - Read addons"
+        echoerr "  - Read addons purchases"
+        echoerr "  - Read users"
+        echoerr "  - Download addon versions"
+    elif [ $HTTP_STATUS -eq 429 ]; then
+        wait 60
+        gmodstore $@
+    else
+        echoerr "Failed to communicate with GmodStore API."
+    fi
+
+    echoerr "----------------------------------------"
+    echoerr "     URL: $HTTP_URL"
+    echoerr "  STATUS: $HTTP_STATUS"
+    echoerr "RESPONSE: $HTTP_BODY"
+    return 1
+}
+
+buildconfig() {
+    echo "Building config.json..."
+    cat << EOF > config.json
+{
+    "discord_bot_token": "$DISCORD_BOT_TOKEN",
+    "api_port": 3000
+}
+EOF
+}
+
+set -e
+
+echo "Fetching Steam ID..."
+STEAMID64=`gmodstore users/me .data.id`
+
+echo "Fetching Purchases..."
+PURCHASES=`gmodstore users/$STEAMID64/purchases\?with=addon '[.data[]|select(.revoked == false)|.addon.id]'`
+
+OWNS_EMBER=`echo "$PURCHASES" | jq -r 'contains([5620])'`
+OWNS_FORUMS=`echo "$PURCHASES" | jq -r 'contains([5876])'`
+OWNS_DISCORD=`echo "$PURCHASES" | jq -r 'contains([6122])'`
+
+if [ "$OWNS_EMBER" != "true" ]; then
+    echo "You don't own Ember. Please make sure to use an API key from an account that owns Ember."
+    exit 1
+fi
+
+if [ "$OWNS_DISCORD" != "true" ]; then
+    echo "You don't own Discord DLC. Entering sleep mode..."
+    wait 86400
+    exit 0
+fi
+
+# Check for discord bot updates, download new version if any exists.
+echo "Checking for ember updates..."
+DISCORD_REMOTE=`gmodstore addons/6122?with=latest_version '.data.latest_version.id'`
+set +e
+DISCORD_LOCAL=`cat discord.version`
+set -e
+
+if [ "$DISCORD_REMOTE" = "$DISCORD_LOCAL" ]; then
+    echo "No updated available for Discord DLC, skipping update."
+else
+    echo "New update avaiable for Discord DLC, updating..."
+    DISCORD_DOWNLOAD=`gmodstore addons/6122/versions/$DISCORD_REMOTE/download | jq -r '.data.url'`
+
+    echo "Cleaning up previous versions..."
+    find . -name . -o -prune -exec rm -rf -- {} +
+
+    echo "Downloading and extracting new version..."
+    mkdir -p ./.downloads
+    curl --silent -o ./.downloads/ember.zip $DISCORD_DOWNLOAD
+    unzip -o -q ./.downloads/ember.zip "bot/*" -d "./.downloads/"
+    for x in ./.downloads/bot/* ./.downloads/bot/.[!.]* ./.downloads/bot/..?*; do
+        if [ -e "$x" ]; then mv -- "$x" ./; fi
+    done
+
+    npm install
+
+    echo "Cleaning up update..."
+    rm -R ./.downloads
+    echo "$DISCORD_REMOTE" > discord.version
+
+    echo "Discord DLC updated!"
+fi
+
+# This avoids the ember.lock file being removed before mysql is online.
+until nc -z -v -w30 ember 80
+do
+  echo "Waiting for ember website to be online."
+  sleep 1
+done
+
+buildconfig
+npm start

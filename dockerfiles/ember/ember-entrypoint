@@ -46,6 +46,17 @@ fixpermissions() {
     chmod -R 776 $1
 }
 
+builddiscordconfig() {
+    echo "Building modules/discord/config.php..."
+    cat << EOF > modules/discord/config.php
+<?php
+\$settings['discord'] = [
+    'host' => 'discord:3000',
+    'sync_token' => '$DISCORD_SYNC_TOKEN'
+];
+EOF
+}
+
 buildconfig() {
     echo "Building config.php..."
     cat << EOF > config.php
@@ -53,10 +64,10 @@ buildconfig() {
 \$settings = [
     'steam_api_key' => '$STEAM_API',
     'discord_api' => [
-        'client_id' => '',
-        'client_secret' => '',
-        'bot_token' => '',
-        'guild_id' => ''
+        'client_id' => '$DISCORD_CLIENT_ID',
+        'client_secret' => '$DISCORD_CLIENT_SECRET',
+        'bot_token' => '$DISCORD_BOT_TOKEN',
+        'guild_id' => '$DISCORD_GUILD_ID'
     ],
     'db' => [
         'host' => '$MYSQL_HOST',
@@ -174,6 +185,42 @@ else
 
         echo "Forums DLC updated!"
     fi
+fi
+
+if [ "$OWNS_DISCORD" != "true" ]; then
+    echo "You don't own the Discord DLC, skipping download..."
+else
+    echo "Checking for Discord DLC updates..."
+    DISCORD_REMOTE=`gmodstore addons/6122?with=latest_version '.data.latest_version.id'`
+    set +e
+    DISCORD_LOCAL=`cat ./modules/discord/discord.version`
+    set -e
+
+    if [ "$DISCORD_REMOTE" = "$DISCORD_LOCAL" ]; then
+        echo "No updated available for Discord DLC, skipping update."
+    else
+        echo "New update avaiable for Discord DLC, updating..."
+        DISCORD_DOWNLOAD=`gmodstore addons/6122/versions/$DISCORD_REMOTE/download | jq -r '.data.url'`
+
+        echo "Cleaning up previous versions..."
+        fixpermissions ./modules/
+        rm -Rf ./modules/discord/
+
+        echo "Downloading and extracting new version..."
+        mkdir -p ./.downloads
+        curl --silent -o ./.downloads/discord.zip $DISCORD_DOWNLOAD
+        unzip -o -q ./.downloads/discord.zip "web/*" -d "./.downloads/"
+        cp -r ./.downloads/web/* ./
+
+        echo "Cleaning up update..."
+        rm -R ./.downloads
+        echo "$DISCORD_REMOTE" > ./modules/discord/discord.version
+        fixpermissions .
+
+        echo "Discord DLC updated!"
+    fi
+
+    builddiscordconfig
 fi
 
 buildconfig # Update config just in case any environment variable changed.

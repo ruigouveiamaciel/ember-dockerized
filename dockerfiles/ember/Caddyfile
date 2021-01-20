@@ -1,4 +1,4 @@
-{$CADDY_DOMAIN}:{$CADDY_PORT} {
+(webserver) {
 	handle_path /assets/* {
 		root * /var/www/assets
 		file_server
@@ -13,4 +13,12 @@
 		rewrite / /index.php?{query}
 		file_server
 	}
+}
+
+{$CADDY_DOMAIN}:{$CADDY_PORT} {
+	import webserver
+}
+
+ember:80 {
+	import webserver
 }
