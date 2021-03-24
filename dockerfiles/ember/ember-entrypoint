@@ -166,8 +166,8 @@ fi
 fixpermissions . # Make sure we have the right permissions for php-fpm
 fixpermissions ../assets
 
-# This avoids the ember.lock file being removed before mysql is online.
-until nc -z -v -w30 $MYSQL_HOST 3306
+# This avoids the ember.lock file being removed before the database is online.
+until nc -z -v -w30 $DB_HOST $DB_PORT
 do
   echo "Waiting for database connection..."
   sleep 1
