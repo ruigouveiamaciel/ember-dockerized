@@ -16,6 +16,8 @@ services:
       - "./volumes/html/:/var/www/html/"
       - "./volumes/assets/:/var/www/assets/"
     env_file: .env
+    environment:
+      DISCORD_HOST: "http://discord:3000"
 
   discord:
     container_name: ember-discord-bot
@@ -27,6 +29,12 @@ services:
     volumes:
       - "./volumes/discord/:/app/"
     env_file: .env
+    environment:
+      DB_HOST: ""
+      DB_PORT: ""
+      DB_DATABASE: ""
+      DB_USERNAME: ""
+      DB_PASSWORD: ""
 
   database:
     container_name: ember-database
@@ -37,6 +45,10 @@ services:
       - "./volumes/database:/var/lib/mysql"
     environment:
       MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+      MYSQL_PORT: $DB_PORT
+      MYSQL_DATABASE: $DB_DATABASE
+      MYSQL_USER: $DB_USERNAME
+      MYSQL_PASSWORD: $DB_PASSWORD
 
   cache:
     container_name: ember-cache
