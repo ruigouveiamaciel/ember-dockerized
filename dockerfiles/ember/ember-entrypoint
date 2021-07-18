@@ -46,63 +46,6 @@ fixpermissions() {
     chmod -R 776 $1
 }
 
-builddiscordconfig() {
-    echo "Building modules/discord/config.php..."
-    cat << EOF > modules/discord/config.php
-<?php
-\$settings['discord'] = [
-    'host' => 'discord:3000',
-    'sync_token' => '$DISCORD_SYNC_TOKEN'
-];
-EOF
-}
-
-buildconfig() {
-    echo "Building config.php..."
-    cat << EOF > config.php
-<?php
-\$settings = [
-    'steam_api_key' => '$STEAM_API',
-    'discord_api' => [
-        'client_id' => '$DISCORD_CLIENT_ID',
-        'client_secret' => '$DISCORD_CLIENT_SECRET',
-        'bot_token' => '$DISCORD_BOT_TOKEN',
-        'guild_id' => '$DISCORD_GUILD_ID'
-    ],
-    'db' => [
-        'host' => '$MYSQL_HOST',
-        'port' => $MYSQL_PORT,
-        'database' => '$MYSQL_DATABASE',
-        'username' => '$MYSQL_USER',
-        'password' => '$MYSQL_PASSWORD'
-    ],
-    'cache' => [
-        'cache.default' => '$CACHE_DRIVER',
-        'database.redis' => [
-            'cluster' => $REDIS_CLUSTER,
-            'default' => [
-                'host' => '$REDIS_HOST',
-                'password' => '$REDIS_PASSWORD',
-                'port' => $REDIS_PORT,
-                'database' => $REDIS_DATABASE
-            ]
-        ],
-        'cache.stores.memcached' => [
-            'servers' => [
-                [
-                    'host'   => '$MEMCACHED_HOST',
-                    'port'   => $MEMCACHED_PORT,
-                    'weight' => $MEMCACHED_WEIGHT
-                ]
-            ]
-        ]
-    ],
-    'session_lifetime' => $SESSION_LIFE,
-    'development_mode' => $DEVELOPMENT_MODE
-];
-EOF
-}
-
 set -e
 
 echo "Fetching Steam ID..."
@@ -148,7 +91,6 @@ else
     echo "Cleaning up update..."
     rm -R ./.downloads
     echo "$EMBER_REMOTE" > ember.version
-    buildconfig
     fixpermissions .
 
     echo "Ember updated!"
@@ -219,16 +161,13 @@ else
 
         echo "Discord DLC updated!"
     fi
-
-    builddiscordconfig
 fi
 
-buildconfig # Update config just in case any environment variable changed.
 fixpermissions . # Make sure we have the right permissions for php-fpm
 fixpermissions ../assets
 
-# This avoids the ember.lock file being removed before mysql is online.
-until nc -z -v -w30 $MYSQL_HOST 3306
+# This avoids the ember.lock file being removed before the database is online.
+until nc -z -v -w30 $DB_HOST $DB_PORT
 do
   echo "Waiting for database connection..."
   sleep 1
